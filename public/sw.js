@@ -1,7 +1,7 @@
 // Service Worker for Claude Code UI PWA
 // Supports both direct access and orchestrator proxy access via proxyBase parameter
 
-const CACHE_NAME = "claude-ui-v3";
+const CACHE_NAME = "claude-ui-v5";
 
 // Extract proxyBase from the service worker URL query string
 // e.g., sw.js?proxyBase=/clients/badal-laptop/proxy
@@ -88,24 +88,42 @@ self.addEventListener("fetch", (event) => {
         normalizedUrl === "manifest.json"
       ) {
         try {
-          // Use cache: 'no-cache' to get fresh content but still respect ETag
           const networkResponse = await fetch(request.url, {
             cache: "no-cache",
           });
-          // Only cache successful responses
           if (networkResponse.ok) {
             const cache = await caches.open(CACHE_NAME);
             cache.put(request, networkResponse.clone());
           }
           return networkResponse;
         } catch {
-          // Fall back to cache if network fails
           const cache = await caches.open(CACHE_NAME);
           const cachedResponse = await cache.match(request);
-          if (cachedResponse) {
-            return cachedResponse;
-          }
+          if (cachedResponse) return cachedResponse;
           throw new Error("manifest.json not available");
+        }
+      }
+
+      // Network-first for HTML documents (index.html, SPA routes)
+      // This ensures the browser always gets the latest HTML with correct asset hashes
+      const isDocument =
+        request.mode === "navigate" ||
+        normalizedUrl.endsWith("/index.html") ||
+        normalizedUrl === "/" ||
+        normalizedUrl === "";
+      if (isDocument) {
+        try {
+          const networkResponse = await fetch(request.url, { cache: "no-cache" });
+          if (networkResponse.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            cache.put(request, networkResponse.clone());
+          }
+          return networkResponse;
+        } catch {
+          const cache = await caches.open(CACHE_NAME);
+          const cachedResponse = await cache.match(request);
+          if (cachedResponse) return cachedResponse;
+          throw new Error("Document not available");
         }
       }
 

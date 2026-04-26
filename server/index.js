@@ -665,8 +665,13 @@ app.use(
     etag: true,
     lastModified: true,
     setHeaders: (res, filePath) => {
-      // Cache icons and other static assets for 1 hour
-      if (filePath.match(/\.(svg|png|jpg|jpeg|gif|ico|woff2?|ttf|eot)$/)) {
+      // Service worker must never be cached so browsers detect updates
+      if (filePath.endsWith("sw.js")) {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      } else if (filePath.match(/\.(svg|png|jpg|jpeg|gif|ico|woff2?|ttf|eot)$/)) {
+        // Cache icons and other static assets for 1 hour
         res.setHeader("Cache-Control", "public, max-age=3600, must-revalidate");
       } else if (filePath.endsWith(".json")) {
         // JSON files (like manifest.json) - short cache with revalidation
@@ -690,6 +695,11 @@ app.use(
     setHeaders: (res, filePath) => {
       if (filePath.endsWith(".html")) {
         // Prevent HTML caching to avoid service worker issues after builds
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      } else if (filePath.endsWith("sw.js")) {
+        // Service worker must never be cached so browsers detect updates
         res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
         res.setHeader("Pragma", "no-cache");
         res.setHeader("Expires", "0");

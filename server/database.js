@@ -284,21 +284,22 @@ function upsertProject(project) {
 function getProjectsFromDb(timeframMs = null) {
   const database = getDatabase();
   let query = `
-    SELECT name, display_name as displayName, full_path as fullPath,
-           session_count as sessionCount, last_activity as lastActivity,
-           has_claude_sessions as hasClaudeSessions,
-           has_cursor_sessions as hasCursorSessions,
-           has_codex_sessions as hasCodexSessions,
-           has_taskmaster as hasTaskmaster
-    FROM projects
+    SELECT p.name, p.display_name as displayName, p.full_path as fullPath,
+           (SELECT COUNT(*) FROM sessions s WHERE s.project_name = p.name) as sessionCount,
+           p.last_activity as lastActivity,
+           p.has_claude_sessions as hasClaudeSessions,
+           p.has_cursor_sessions as hasCursorSessions,
+           p.has_codex_sessions as hasCodexSessions,
+           p.has_taskmaster as hasTaskmaster
+    FROM projects p
   `;
 
   if (timeframMs) {
     const cutoff = Date.now() - timeframMs;
-    query += ` WHERE last_activity >= ${cutoff}`;
+    query += ` WHERE p.last_activity >= ${cutoff}`;
   }
 
-  query += ` ORDER BY last_activity DESC`;
+  query += ` ORDER BY p.last_activity DESC`;
 
   return database
     .prepare(query)

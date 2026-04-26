@@ -76,20 +76,35 @@ function calculateLastActivity(project) {
  * Transform full project data to slim format
  */
 function toSlimProject(project) {
-  const claudeCount = project.sessions?.length || 0;
-  const cursorCount = project.cursorSessions?.length || 0;
-  const codexCount = project.codexSessions?.length || 0;
+  // Support both DB-sourced data (sessionCount already computed) and
+  // full filesystem data (sessions/cursorSessions/codexSessions arrays)
+  let sessionCount;
+  let claudeCount, cursorCount, codexCount;
+
+  if (typeof project.sessionCount === "number") {
+    // DB-sourced data already has sessionCount from subquery
+    sessionCount = project.sessionCount;
+    claudeCount = project.hasClaudeSessions ? 1 : 0;
+    cursorCount = project.hasCursorSessions ? 1 : 0;
+    codexCount = project.hasCodexSessions ? 1 : 0;
+  } else {
+    // Full filesystem data with session arrays
+    claudeCount = project.sessions?.length || 0;
+    cursorCount = project.cursorSessions?.length || 0;
+    codexCount = project.codexSessions?.length || 0;
+    sessionCount = claudeCount + cursorCount + codexCount;
+  }
 
   return {
     name: project.name,
     displayName: project.displayName,
     fullPath: project.fullPath || project.path,
-    sessionCount: claudeCount + cursorCount + codexCount,
-    lastActivity: calculateLastActivity(project),
-    hasClaudeSessions: claudeCount > 0,
-    hasCursorSessions: cursorCount > 0,
-    hasCodexSessions: codexCount > 0,
-    hasTaskmaster: project.taskmaster?.hasTaskmaster || false,
+    sessionCount,
+    lastActivity: project.lastActivity || calculateLastActivity(project),
+    hasClaudeSessions: project.hasClaudeSessions ?? claudeCount > 0,
+    hasCursorSessions: project.hasCursorSessions ?? cursorCount > 0,
+    hasCodexSessions: project.hasCodexSessions ?? codexCount > 0,
+    hasTaskmaster: project.hasTaskmaster ?? project.taskmaster?.hasTaskmaster ?? false,
     sessionMeta: project.sessionMeta,
     isManuallyAdded: project.isManuallyAdded || false,
     isCustomName: project.isCustomName || false,

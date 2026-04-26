@@ -211,12 +211,41 @@ function Sidebar({
     }
   }, [selectedSession, selectedProject]);
 
+  // Load initial sessions when a project is expanded (projectsList endpoint doesn't include sessions)
+  useEffect(() => {
+    expandedProjects.forEach(async (projectName) => {
+      // Skip if sessions already loaded for this project
+      if (additionalSessions[projectName]?.length > 0 || loadingSessions[projectName]) {
+        return;
+      }
+      const project = projects.find((p) => p.name === projectName);
+      if (!project || project.sessionCount === 0) return;
+
+      setLoadingSessions((prev) => ({ ...prev, [projectName]: true }));
+      try {
+        const response = await api.sessions(projectName, 5, 0);
+        if (response.ok) {
+          const result = await response.json();
+          setAdditionalSessions((prev) => ({
+            ...prev,
+            [projectName]: result.sessions || [],
+          }));
+        }
+      } catch (error) {
+        console.error("Error loading initial sessions:", error);
+      } finally {
+        setLoadingSessions((prev) => ({ ...prev, [projectName]: false }));
+      }
+    });
+  }, [expandedProjects]);
+
   // Mark sessions as loaded when projects come in
   useEffect(() => {
     if (projects.length > 0 && !isLoading) {
       const newLoaded = new Set();
       projects.forEach((project) => {
-        if (project.sessions && project.sessions.length >= 0) {
+        // projectsList endpoint returns sessionCount (number), not sessions array
+        if (typeof project.sessionCount === "number") {
           newLoaded.add(project.name);
         }
       });
@@ -1056,7 +1085,7 @@ function Sidebar({
                                       <p className="text-xs text-muted-foreground">
                                         {(() => {
                                           const sessionCount =
-                                            getAllSessions(project).length;
+                                            project.sessionCount ?? getAllSessions(project).length;
                                           const hasMore =
                                             project.sessionMeta?.hasMore !==
                                             false;
@@ -1231,7 +1260,7 @@ function Sidebar({
                                   <div className="text-xs text-muted-foreground">
                                     {(() => {
                                       const sessionCount =
-                                        getAllSessions(project).length;
+                                        project.sessionCount ?? getAllSessions(project).length;
                                       const hasMore =
                                         project.sessionMeta?.hasMore !== false;
                                       return hasMore && sessionCount >= 5
