@@ -44,11 +44,49 @@ const currentPid = process.pid;
 let updateInterval = null;
 
 /**
- * Check if a command is an external Claude process (not spawned by us)
- * @param {string} command - The process command line
+ * Check if a process is a descendant of one of our own tmux sessions (claudeui-*)
+ * by walking up the process tree.
+ * @param {number} pid - Process ID to check
  * @returns {boolean}
  */
-function isExternalClaudeProcess(command) {
+function isInsideOurTmuxSession(pid) {
+  try {
+    // Walk up the process tree (max 10 levels to avoid infinite loops)
+    let currentPid = pid;
+    for (let i = 0; i < 10 && currentPid > 1; i++) {
+      const result = spawnSync(
+        "ps",
+        ["-o", "ppid=,command=", "-p", String(currentPid)],
+        { encoding: "utf8", stdio: "pipe" },
+      );
+      if (result.status !== 0 || !result.stdout.trim()) break;
+
+      const match = result.stdout.trim().match(/^\s*(\d+)\s+(.+)$/);
+      if (!match) break;
+
+      const ppid = parseInt(match[1], 10);
+      const command = match[2];
+
+      // Check if the parent is a tmux process with our session prefix
+      if (command.includes("claudeui-") && command.includes("tmux")) {
+        return true;
+      }
+
+      currentPid = ppid;
+    }
+  } catch {
+    // If ps fails, assume not in our session
+  }
+  return false;
+}
+
+/**
+ * Check if a command is an external Claude process (not spawned by us)
+ * @param {string} command - The process command line
+ * @param {number} pid - Process ID (used for tmux session check)
+ * @returns {boolean}
+ */
+function isExternalClaudeProcess(command, pid) {
   // Skip node processes (SDK internals)
   if (command.startsWith("node ")) {
     log.debug({ command: command.slice(0, 60) }, "Rejected: starts with node");
@@ -60,6 +98,15 @@ function isExternalClaudeProcess(command) {
     log.debug(
       { command: command.slice(0, 60) },
       "Rejected: contains claudecodeui/server",
+    );
+    return false;
+  }
+
+  // Skip processes running inside our own tmux sessions (claudeui-*)
+  if (pid && isInsideOurTmuxSession(pid)) {
+    log.debug(
+      { command: command.slice(0, 60), pid },
+      "Rejected: inside our tmux session",
     );
     return false;
   }
@@ -153,7 +200,7 @@ function scanClaudeProcesses() {
                 const pid = parseInt(parts[1], 10);
                 if (!isNaN(pid) && pid !== currentPid) {
                   const command = parts.slice(10).join(" ");
-                  if (isExternalClaudeProcess(command)) {
+                  if (isExternalClaudeProcess(command, pid)) {
                     processes.push({ pid, command, cwd: null });
                   }
                 }
@@ -205,7 +252,7 @@ function scanClaudeProcesses() {
               if (match) {
                 const pid = parseInt(match[1], 10);
                 const command = match[2];
-                if (isExternalClaudeProcess(command)) {
+                if (isExternalClaudeProcess(command, pid)) {
                   pidCommands.set(pid, command);
                 }
               }

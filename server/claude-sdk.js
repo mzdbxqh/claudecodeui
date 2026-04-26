@@ -279,31 +279,42 @@ function transformMessage(sdkMessage) {
  * @returns {Object|null} Token budget object or null
  */
 function extractTokenBudget(resultMessage) {
-  if (resultMessage.type !== 'result' || !resultMessage.modelUsage) {
+  if (resultMessage.type !== 'result') {
     return null;
   }
 
-  // Get the first model's usage data
-  const modelKey = Object.keys(resultMessage.modelUsage)[0];
-  const modelData = resultMessage.modelUsage[modelKey];
+  const contextWindow = parseInt(process.env.CONTEXT_WINDOW) || 160000;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadTokens = 0;
+  let cacheCreationTokens = 0;
 
-  if (!modelData) {
+  if (resultMessage.modelUsage) {
+    // Get the first model's usage data
+    const modelKey = Object.keys(resultMessage.modelUsage)[0];
+    const modelData = resultMessage.modelUsage[modelKey];
+
+    if (modelData) {
+      // Use cumulative tokens if available (tracks total for the session)
+      // Otherwise fall back to per-request tokens
+      inputTokens = modelData.cumulativeInputTokens || modelData.inputTokens || 0;
+      outputTokens = modelData.cumulativeOutputTokens || modelData.outputTokens || 0;
+      cacheReadTokens = modelData.cumulativeCacheReadInputTokens || modelData.cacheReadInputTokens || 0;
+      cacheCreationTokens = modelData.cumulativeCacheCreationInputTokens || modelData.cacheCreationInputTokens || 0;
+    }
+  } else if (resultMessage.usage) {
+    // Fallback: use resultMessage.usage when modelUsage is not available (e.g., non-Anthropic proxies)
+    const usage = resultMessage.usage;
+    inputTokens = usage.input_tokens || 0;
+    outputTokens = usage.output_tokens || 0;
+    cacheReadTokens = usage.cache_read_input_tokens || 0;
+    cacheCreationTokens = usage.cache_creation_input_tokens || 0;
+  } else {
     return null;
   }
-
-  // Use cumulative tokens if available (tracks total for the session)
-  // Otherwise fall back to per-request tokens
-  const inputTokens = modelData.cumulativeInputTokens || modelData.inputTokens || 0;
-  const outputTokens = modelData.cumulativeOutputTokens || modelData.outputTokens || 0;
-  const cacheReadTokens = modelData.cumulativeCacheReadInputTokens || modelData.cacheReadInputTokens || 0;
-  const cacheCreationTokens = modelData.cumulativeCacheCreationInputTokens || modelData.cacheCreationInputTokens || 0;
 
   // Total used = input + output + cache tokens
   const totalUsed = inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens;
-
-  // Use configured context window budget from environment (default 160000)
-  // This is the user's budget limit, not the model's context window
-  const contextWindow = parseInt(process.env.CONTEXT_WINDOW) || 160000;
 
   console.log(`Token calculation: input=${inputTokens}, output=${outputTokens}, cache=${cacheReadTokens + cacheCreationTokens}, total=${totalUsed}/${contextWindow}`);
 
